@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.tensorboard import SummaryWriter
 import wandb
 
 from torchvision.models import (
@@ -147,13 +148,14 @@ def plot_training_history(train_losses, val_losses, train_accs, val_accs):
     plt.savefig('training_history.png')
     plt.close()
 
-def train(model_name, batch_size=32, lr=0.001, epochs=30, patience=5, device_override=None, use_wandb=True):
-    """Main training function with early stopping"""
+def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_override=None, use_wandb=True):
+    """Main training function dengan modifikasi TensorBoard"""
     # Generate timestamp for run name
     timestamp = datetime.now().strftime("%Y%m%d-%H%M")
     run_name = f"{model_name}_{timestamp}"
     
     # Initialize wandb if enabled
+    writer = None
     if use_wandb:
         wandb.init(
             project="coffee-classification",
@@ -166,6 +168,9 @@ def train(model_name, batch_size=32, lr=0.001, epochs=30, patience=5, device_ove
                 "patience": patience
             }
         )
+    else:
+        log_dir = os.path.join("runs", run_name)
+        writer = SummaryWriter(log_dir=log_dir)
     
     # Set device using the utility function
     device = check_set_gpu(device_override)
@@ -183,21 +188,24 @@ def train(model_name, batch_size=32, lr=0.001, epochs=30, patience=5, device_ove
     model = get_model(model_name, num_classes)
     model = model.to(device)
     
-    # Log model architecture to wandb if enabled
+    # Log model architecture ke TensorBoard
     if use_wandb:
         wandb.watch(model, log="all")
+    else:
+        example_input = next(iter(train_loader))[0][0].unsqueeze(0).to(device)
+        writer.add_graph(model, example_input)
     
-    # Loss function and optimizer
+    # Loss function dan optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
     
-    # Initialize variables
+    # Inisialisasi variabel
     best_val_acc = 0.0
     epochs_no_improve = 0
     early_stop = False
     
-    # History for plotting
+    # History untuk plotting
     train_losses, val_losses = [], []
     train_accs, val_accs = [], []
     
@@ -233,12 +241,18 @@ def train(model_name, batch_size=32, lr=0.001, epochs=30, patience=5, device_ove
                 "learning_rate": optimizer.param_groups[0]['lr'],
                 "epoch": epoch + 1
             })
+        else:
+            writer.add_scalar('Loss/train', train_loss, epoch)
+            writer.add_scalar('Loss/val', val_loss, epoch)
+            writer.add_scalar('Accuracy/train', train_acc, epoch)
+            writer.add_scalar('Accuracy/val', val_acc, epoch)
+            writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], epoch)
         
         # Print epoch summary
         print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%")
         print(f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
         
-        # Save model if validation accuracy improves
+        # Save model jika validasi accuracy membaik
         if val_acc > best_val_acc:
             print(f"Validation accuracy improved from {best_val_acc:.2f}% to {val_acc:.2f}%")
             best_val_acc = val_acc
@@ -248,7 +262,7 @@ def train(model_name, batch_size=32, lr=0.001, epochs=30, patience=5, device_ove
             # Save best model to wandb if enabled
             if use_wandb:
                 wandb.save(checkpoint_path)
-                
+            
             epochs_no_improve = 0
         else:
             epochs_no_improve += 1
@@ -265,24 +279,27 @@ def train(model_name, batch_size=32, lr=0.001, epochs=30, patience=5, device_ove
     print(f"Best validation accuracy: {best_val_acc:.2f}%")
     
     # Plot training history
-    plot_training_history(train_losses, val_losses, train_accs, val_accs)
+    fig = plot_training_history(train_losses, val_losses, train_accs, val_accs)
     if use_wandb:
         wandb.log({"training_history": wandb.Image("training_history.png")})
+    else:
+        writer.add_figure("Training History", fig)
     
-    # Save the final model
+    # Save final model
     final_model_path = f"models/{run_name}_final.pth"
     save_checkpoint(model, optimizer, epoch, val_acc, final_model_path)
     if use_wandb:
         wandb.save(final_model_path)
     
-    # Finish wandb run if enabled
     if use_wandb:
         wandb.finish()
+    else:
+        writer.close()
     
     return model, best_val_acc
 
 def main():
-    """Main function to parse arguments and start training"""
+    """Main function dengan modifikasi argument"""
     parser = argparse.ArgumentParser(description="Train coffee classification models")
     parser.add_argument("--model", type=str, choices=["efficientnet", "shufflenet", "resnet152", "vit"], 
                         default="efficientnet", help="Model architecture to use")
@@ -292,12 +309,20 @@ def main():
     parser.add_argument("--patience", type=int, default=5, help="Early stopping patience")
     parser.add_argument("--device", type=str, choices=["cuda", "mps", "cpu"], 
                         default=None, help="Device to use (overrides automatic detection)")
-    parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging")
+    parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging and use tensorboard")
     
     args = parser.parse_args()
     
     print(f"Training with {args.model} model")
-    train(args.model, args.batch_size, args.lr, args.epochs, args.patience, args.device, not args.no_wandb)
+    train(
+        args.model,
+        args.batch_size,
+        args.lr,
+        args.epochs,
+        args.patience,
+        args.device,
+        not args.no_wandb
+    )
 
 if __name__ == "__main__":
     main()
