@@ -285,7 +285,7 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
 def main():
     """Main function dengan modifikasi argument"""
     parser = argparse.ArgumentParser(description="Train coffee classification models")
-    parser.add_argument("--model", type=str, choices=["efficientnet", "shufflenet", "resnet152", "vit"], 
+    parser.add_argument("--model", type=str, choices=["efficientnet", "resnet50", "mobilenetv3", "densenet121", "vit", "convnext", "regnet"], 
                         default="efficientnet", help="Model architecture to use")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
     parser.add_argument("--lr", type=float, default=0.00001, help="Learning rate")
