@@ -12,51 +12,9 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
 import wandb
 
-from torchvision.models import (
-    efficientnet_b0, EfficientNet_B0_Weights,
-    shufflenet_v2_x0_5, ShuffleNet_V2_X0_5_Weights,
-    resnet152, ResNet152_Weights,
-    vit_b_16, ViT_B_16_Weights
-)
-
-from datareader import get_kfold_data_loaders, CoffeeDataset
+from data_reader import get_kfold_data_loaders, CoffeeDataset
 from utils import check_set_gpu
-
-def get_model(model_name, num_classes):
-    """
-    Create a model with pretrained weights and modified classifier layer
-    
-    Args:
-        model_name (str): Name of the model to use
-        num_classes (int): Number of output classes
-        
-    Returns:
-        model: PyTorch model
-    """
-    if model_name == "efficientnet":
-        weights = EfficientNet_B0_Weights.IMAGENET1K_V1
-        model = efficientnet_b0(weights=weights)
-        model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
-        
-    elif model_name == "shufflenet":
-        weights = ShuffleNet_V2_X0_5_Weights.IMAGENET1K_V1
-        model = shufflenet_v2_x0_5(weights=weights)
-        model.fc = nn.Linear(model.fc.in_features, num_classes)
-        
-    elif model_name == "resnet152":
-        weights = ResNet152_Weights.IMAGENET1K_V1
-        model = resnet152(weights=weights)
-        model.fc = nn.Linear(model.fc.in_features, num_classes)
-        
-    elif model_name == "vit":
-        weights = ViT_B_16_Weights.IMAGENET1K_V1
-        model = vit_b_16(weights=weights)
-        model.heads.head = nn.Linear(model.heads.head.in_features, num_classes)
-        
-    else:
-        raise ValueError(f"Unknown model name: {model_name}")
-    
-    return model
+from get_models import get_models
 
 def train_one_epoch(model, train_loader, criterion, optimizer, epoch, device):
     """Train the model for one epoch"""
@@ -332,7 +290,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
     parser.add_argument("--lr", type=float, default=0.00001, help="Learning rate")
     parser.add_argument("--epochs", type=int, default=200, help="Number of epochs")
-    parser.add_argument("--patience", type=int, default=20, help="Early stopping patience")
+    parser.add_argument("--patience", type=int, default=25, help="Early stopping patience")
     parser.add_argument("--device", type=str, choices=["cuda", "mps", "cpu"], 
                         default=None, help="Device to use (overrides automatic detection)")
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging and use tensorboard")
