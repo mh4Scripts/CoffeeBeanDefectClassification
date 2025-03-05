@@ -3,3 +3,4 @@ dataset_kopi
 models/
 runs/
 wandb/
+training_history.png
