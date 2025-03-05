@@ -1,3 +1,4 @@
+import torch.nn as nn
 from torchvision.models import (
     efficientnet_b0, EfficientNet_B0_Weights,
     resnet50, ResNet50_Weights,
