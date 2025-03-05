@@ -14,7 +14,7 @@ import wandb
 
 from data_reader import get_kfold_data_loaders, CoffeeDataset
 from utils import check_set_gpu
-from get_models import get_models
+from get_model import get_model
 
 def train_one_epoch(model, train_loader, criterion, optimizer, epoch, device):
     """Train the model for one epoch"""
