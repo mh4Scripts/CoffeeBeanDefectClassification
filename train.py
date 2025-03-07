@@ -146,7 +146,9 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
         # Loss function and optimizer
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=lr)
-        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
+        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+
+        print(f"Initial Learning Rate: {optimizer.param_groups[0]['lr']}")
 
         # Initialize variables
         best_val_acc = 0.0
