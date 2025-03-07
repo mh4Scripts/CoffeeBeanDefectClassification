@@ -15,6 +15,7 @@ import wandb
 from data_reader import get_kfold_data_loaders, CoffeeDataset
 from utils import check_set_gpu
 from get_model import get_model
+from validate import validate
 
 def train_one_epoch(model, train_loader, criterion, optimizer, epoch, device):
     """Train the model for one epoch"""
@@ -176,6 +177,7 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
         # History untuk plotting
         train_losses, val_losses = [], []
         train_accs, val_accs = [], []
+        val_precisions, val_recalls, val_f1s = [], [], []
 
         start_time = time.time()
         for epoch in range(epochs):
@@ -188,7 +190,7 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
 
             # Train and validate - pass device to the functions
             train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, epoch, device)
-            val_loss, val_acc = validate(model, val_loader, criterion, device)
+            val_loss, val_acc, val_precision, val_recall, val_f1 = validate(model, val_loader, criterion, device)
 
             # Update learning rate
             scheduler.step(val_loss)
@@ -198,6 +200,9 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
             val_losses.append(val_loss)
             train_accs.append(train_acc)
             val_accs.append(val_acc)
+            val_precisions.append(val_precision)
+            val_recalls.append(val_recall)
+            val_f1s.append(val_f1)
 
             # Log metrics to wandb if enabled
             if use_wandb:
@@ -207,6 +212,9 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
                     "train_acc": train_acc,
                     "val_loss": val_loss,
                     "val_acc": val_acc,
+                    "val_precision": val_precision,
+                    "val_recall": val_recall,
+                    "val_f1": val_f1,
                     "learning_rate": optimizer.param_groups[0]['lr'],
                     "epoch": epoch + 1
                 })
@@ -215,11 +223,15 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
                 writer.add_scalar(f'Fold {fold+1}/Loss/val', val_loss, epoch)
                 writer.add_scalar(f'Fold {fold+1}/Accuracy/train', train_acc, epoch)
                 writer.add_scalar(f'Fold {fold+1}/Accuracy/val', val_acc, epoch)
+                writer.add_scalar(f'Fold {fold+1}/Precision/val', val_precision, epoch)
+                writer.add_scalar(f'Fold {fold+1}/Recall/val', val_recall, epoch)
+                writer.add_scalar(f'Fold {fold+1}/F1 Score/val', val_f1, epoch)
                 writer.add_scalar(f'Fold {fold+1}/Learning Rate', optimizer.param_groups[0]['lr'], epoch)
 
             # Print epoch summary
             print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%")
             print(f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
+            print(f"Val Precision: {val_precision:.4f}, Val Recall: {val_recall:.4f}, Val F1: {val_f1:.4f}")
 
             # Save model jika validasi accuracy membaik
             if val_acc > best_val_acc:
@@ -246,15 +258,20 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
         training_time = time.time() - start_time
         print(f"Fold {fold + 1} complete in {training_time:.2f}s")
         print(f"Best validation accuracy: {best_val_acc:.2f}%")
+        print(f"Best validation F1 Score: {max(val_f1s):.4f}")
 
         # Save fold results
         fold_results.append({
             "fold": fold + 1,
             "best_val_acc": best_val_acc,
+            "best_val_f1": max(val_f1s),
             "train_losses": train_losses,
             "val_losses": val_losses,
             "train_accs": train_accs,
-            "val_accs": val_accs
+            "val_accs": val_accs,
+            "val_precisions": val_precisions,
+            "val_recalls": val_recalls,
+            "val_f1s": val_f1s
         })
 
         # Plot training history for this fold
@@ -270,17 +287,22 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
         if use_wandb:
             wandb.save(final_model_path)
 
-    # Calculate average validation accuracy across all folds
+    # Calculate average validation accuracy and F1 score across all folds
     avg_val_acc = np.mean([result["best_val_acc"] for result in fold_results])
+    avg_val_f1 = np.mean([result["best_val_f1"] for result in fold_results])
     print(f"\nAverage validation accuracy across all folds: {avg_val_acc:.2f}%")
+    print(f"Average validation F1 Score across all folds: {avg_val_f1:.4f}")
     
     if use_wandb:
-        wandb.log({"average_val_acc": avg_val_acc})
+        wandb.log({
+            "average_val_acc": avg_val_acc,
+            "average_val_f1": avg_val_f1
+        })
         wandb.finish()
     else:
         writer.close()
     
-    return fold_results, avg_val_acc
+    return fold_results, avg_val_acc, avg_val_f1
 
 def main():
     """Main function dengan modifikasi argument"""
@@ -294,19 +316,49 @@ def main():
     parser.add_argument("--device", type=str, choices=["cuda", "mps", "cpu"], 
                         default=None, help="Device to use (overrides automatic detection)")
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging and use tensorboard")
+    parser.add_argument("--all", action="store_true", help="Train all models")
     
     args = parser.parse_args()
-    
-    print(f"Training with {args.model} model")
-    train(
-        args.model,
-        args.batch_size,
-        args.lr,
-        args.epochs,
-        args.patience,
-        args.device,
-        not args.no_wandb
-    )
+
+    all_models = ["efficientnet", "resnet50", "mobilenetv3", "densenet121", "vit", "convnext", "regnet"]
+
+    if args.all:
+        print("Training all models...")
+        results = {}
+        for model_name in all_models:
+            print(f"\nTraining {model_name} model")
+            fold_results, avg_val_acc, avg_val_f1 = train(
+                model_name,
+                args.batch_size,
+                args.lr,
+                args.epochs,
+                args.patience,
+                args.device,
+                not args.no_wandb
+            )
+            results[model_name] = {
+                "avg_val_acc": avg_val_acc,
+                "avg_val_f1": avg_val_f1
+            }
+            print(f"{model_name} - Average Validation Accuracy: {avg_val_acc:.2f}%")
+            print(f"{model_name} - Average Validation F1 Score: {avg_val_f1:.4f}")
+
+        print("\nSummary of Results:")
+        for model_name, metrics in results.items():
+            print(f"{model_name}: Accuracy = {metrics['avg_val_acc']:.2f}%, F1 Score = {metrics['avg_val_f1']:.4f}")
+    else:
+        print(f"Training with {args.model} model")
+        fold_results, avg_val_acc, avg_val_f1 = train(
+            args.model,
+            args.batch_size,
+            args.lr,
+            args.epochs,
+            args.patience,
+            args.device,
+            not args.no_wandb
+        )
+        print(f"Average Validation Accuracy: {avg_val_acc:.2f}%")
+        print(f"Average Validation F1 Score: {avg_val_f1:.4f}")
 
 if __name__ == "__main__":
     main()
