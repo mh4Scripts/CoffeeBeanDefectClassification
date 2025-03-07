@@ -289,8 +289,8 @@ def main():
                         default="efficientnet", help="Model architecture to use")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
     parser.add_argument("--lr", type=float, default=0.00001, help="Learning rate")
-    parser.add_argument("--epochs", type=int, default=200, help="Number of epochs")
-    parser.add_argument("--patience", type=int, default=25, help="Early stopping patience")
+    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
+    parser.add_argument("--patience", type=int, default=20, help="Early stopping patience")
     parser.add_argument("--device", type=str, choices=["cuda", "mps", "cpu"], 
                         default=None, help="Device to use (overrides automatic detection)")
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging and use tensorboard")
