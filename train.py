@@ -86,7 +86,7 @@ def plot_training_history(train_losses, val_losses, train_accs, val_accs):
     plt.savefig('training_history.png')
     plt.close()
 
-def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_override=None, use_wandb=True):
+def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_override=None, use_wandb=True):
     """Main training function with K-Fold cross-validation."""
     # Generate timestamp for run name
     timestamp = datetime.now().strftime("%Y%m%d-%H%M")
@@ -277,7 +277,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
     parser.add_argument("--lr", type=float, default=0.00001, help="Learning rate")
     parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
-    parser.add_argument("--patience", type=int, default=10, help="Early stopping patience")
+    parser.add_argument("--patience", type=int, default=5, help="Early stopping patience")
     parser.add_argument("--device", type=str, choices=["cuda", "mps", "cpu"], 
                         default=None, help="Device to use (overrides automatic detection)")
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging and use tensorboard")
@@ -294,7 +294,7 @@ def main():
         f1_scores = {model: [] for model in all_models}
         precisions = {model: [] for model in all_models}
         recalls = {model: [] for model in all_models}
-        
+
         # Initialize wandb if enabled
         if not args.no_wandb:
             wandb.init(
@@ -307,7 +307,7 @@ def main():
                     "patience": args.patience
                 }
             )
-        
+
         for model_name in all_models:
             print(f"\nTraining {model_name} model")
             fold_results, avg_val_acc, avg_val_f1 = train(
