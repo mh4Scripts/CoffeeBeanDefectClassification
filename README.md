@@ -1,4 +1,4 @@
-# Coffee Classification
+# Coffee Beans Defect Classification
 
 This project implements deep learning models for classifying 19 types of coffee bean defects using PyTorch.
 
