@@ -16,9 +16,10 @@ from data_reader import get_kfold_data_loaders, CoffeeDataset
 from utils import check_set_gpu
 from get_model import get_model
 from validate import validate
+from anova_test import perform_anova
 
 def train_one_epoch(model, train_loader, criterion, optimizer, epoch, device):
-    """Train the model for one epoch"""
+    """Train the model for one epoch."""
     model.train()
     running_loss = 0.0
     correct = 0
@@ -42,39 +43,17 @@ def train_one_epoch(model, train_loader, criterion, optimizer, epoch, device):
         total += labels.size(0)
         correct += predicted.eq(labels).sum().item()
         
-        if (i+1) % 10 == 0:  # Print every 10 mini-batches
-            print(f'Epoch: {epoch+1}, Batch: {i+1}/{len(train_loader)}, '
-                  f'Loss: {running_loss/(i+1):.4f}, '
-                  f'Acc: {100.*correct/total:.2f}%')
+        if (i + 1) % 10 == 0:  # Print every 10 mini-batches
+            print(f'Epoch: {epoch + 1}, Batch: {i + 1}/{len(train_loader)}, '
+                  f'Loss: {running_loss / (i + 1):.4f}, '
+                  f'Acc: {100. * correct / total:.2f}%')
     
     epoch_loss = running_loss / len(train_loader)
     epoch_acc = 100. * correct / total
     return epoch_loss, epoch_acc
 
-def validate(model, val_loader, criterion, device):
-    """Validate the model"""
-    model.eval()
-    running_loss = 0.0
-    correct = 0
-    total = 0
-    
-    with torch.no_grad():
-        for inputs, labels in val_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            
-            running_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
-    
-    val_loss = running_loss / len(val_loader)
-    val_acc = 100. * correct / total
-    return val_loss, val_acc
-
 def save_checkpoint(model, optimizer, epoch, val_acc, filename):
-    """Save model checkpoint"""
+    """Save model checkpoint."""
     state = {
         'model': model.state_dict(),
         'optimizer': optimizer.state_dict(),
@@ -84,7 +63,7 @@ def save_checkpoint(model, optimizer, epoch, val_acc, filename):
     torch.save(state, filename)
 
 def plot_training_history(train_losses, val_losses, train_accs, val_accs):
-    """Plot training and validation history"""
+    """Plot training and validation history."""
     plt.figure(figsize=(12, 5))
     
     plt.subplot(1, 2, 1)
@@ -108,7 +87,7 @@ def plot_training_history(train_losses, val_losses, train_accs, val_accs):
     plt.close()
 
 def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_override=None, use_wandb=True):
-    """Main training function dengan modifikasi untuk K-Fold"""
+    """Main training function with K-Fold cross-validation."""
     # Generate timestamp for run name
     timestamp = datetime.now().strftime("%Y%m%d-%H%M")
     run_name = f"{model_name}_{timestamp}"
@@ -157,27 +136,26 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
         model = get_model(model_name, num_classes)
         model = model.to(device)
 
-        # Log model architecture ke TensorBoard
+        # Log model architecture to TensorBoard
         if use_wandb:
             wandb.watch(model, log="all")
         else:
             example_input = next(iter(train_loader))[0][0].unsqueeze(0).to(device)
             writer.add_graph(model, example_input)
 
-        # Loss function dan optimizer
+        # Loss function and optimizer
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=lr)
         scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
 
-        # Inisialisasi variabel
+        # Initialize variables
         best_val_acc = 0.0
         epochs_no_improve = 0
         early_stop = False
 
-        # History untuk plotting
+        # History for plotting
         train_losses, val_losses = [], []
         train_accs, val_accs = [], []
-        val_precisions, val_recalls, val_f1s = [], [], []
 
         start_time = time.time()
         for epoch in range(epochs):
@@ -185,7 +163,7 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
                 print("Early stopping triggered!")
                 break
 
-            print(f"\nEpoch {epoch+1}/{epochs}")
+            print(f"\nEpoch {epoch + 1}/{epochs}")
             print("-" * 20)
 
             # Train and validate - pass device to the functions
@@ -200,9 +178,6 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
             val_losses.append(val_loss)
             train_accs.append(train_acc)
             val_accs.append(val_acc)
-            val_precisions.append(val_precision)
-            val_recalls.append(val_recall)
-            val_f1s.append(val_f1)
 
             # Log metrics to wandb if enabled
             if use_wandb:
@@ -219,25 +194,25 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
                     "epoch": epoch + 1
                 })
             else:
-                writer.add_scalar(f'Fold {fold+1}/Loss/train', train_loss, epoch)
-                writer.add_scalar(f'Fold {fold+1}/Loss/val', val_loss, epoch)
-                writer.add_scalar(f'Fold {fold+1}/Accuracy/train', train_acc, epoch)
-                writer.add_scalar(f'Fold {fold+1}/Accuracy/val', val_acc, epoch)
-                writer.add_scalar(f'Fold {fold+1}/Precision/val', val_precision, epoch)
-                writer.add_scalar(f'Fold {fold+1}/Recall/val', val_recall, epoch)
-                writer.add_scalar(f'Fold {fold+1}/F1 Score/val', val_f1, epoch)
-                writer.add_scalar(f'Fold {fold+1}/Learning Rate', optimizer.param_groups[0]['lr'], epoch)
+                writer.add_scalar(f'Fold {fold + 1}/Loss/train', train_loss, epoch)
+                writer.add_scalar(f'Fold {fold + 1}/Loss/val', val_loss, epoch)
+                writer.add_scalar(f'Fold {fold + 1}/Accuracy/train', train_acc, epoch)
+                writer.add_scalar(f'Fold {fold + 1}/Accuracy/val', val_acc, epoch)
+                writer.add_scalar(f'Fold {fold + 1}/Precision/val', val_precision, epoch)
+                writer.add_scalar(f'Fold {fold + 1}/Recall/val', val_recall, epoch)
+                writer.add_scalar(f'Fold {fold + 1}/F1 Score/val', val_f1, epoch)
+                writer.add_scalar(f'Fold {fold + 1}/Learning Rate', optimizer.param_groups[0]['lr'], epoch)
 
             # Print epoch summary
             print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%")
             print(f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
             print(f"Val Precision: {val_precision:.4f}, Val Recall: {val_recall:.4f}, Val F1: {val_f1:.4f}")
 
-            # Save model jika validasi accuracy membaik
+            # Save model if validation accuracy improves
             if val_acc > best_val_acc:
                 print(f"Validation accuracy improved from {best_val_acc:.2f}% to {val_acc:.2f}%")
                 best_val_acc = val_acc
-                checkpoint_path = f"models/{run_name}_fold{fold+1}_best.pth"
+                checkpoint_path = f"models/{run_name}_fold{fold + 1}_best.pth"
                 save_checkpoint(model, optimizer, epoch, val_acc, checkpoint_path)
 
                 # Save best model to wandb if enabled
@@ -258,66 +233,56 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=200, patience=5, device_
         training_time = time.time() - start_time
         print(f"Fold {fold + 1} complete in {training_time:.2f}s")
         print(f"Best validation accuracy: {best_val_acc:.2f}%")
-        print(f"Best validation F1 Score: {max(val_f1s):.4f}")
 
         # Save fold results
         fold_results.append({
             "fold": fold + 1,
             "best_val_acc": best_val_acc,
-            "best_val_f1": max(val_f1s),
             "train_losses": train_losses,
             "val_losses": val_losses,
             "train_accs": train_accs,
-            "val_accs": val_accs,
-            "val_precisions": val_precisions,
-            "val_recalls": val_recalls,
-            "val_f1s": val_f1s
+            "val_accs": val_accs
         })
 
         # Plot training history for this fold
         fig = plot_training_history(train_losses, val_losses, train_accs, val_accs)
         if use_wandb:
-            wandb.log({f"Fold {fold+1}/training_history": wandb.Image("training_history.png")})
+            wandb.log({f"Fold {fold + 1}/training_history": wandb.Image("training_history.png")})
         else:
-            writer.add_figure(f"Fold {fold+1}/Training History", fig)
+            writer.add_figure(f"Fold {fold + 1}/Training History", fig)
 
         # Save final model for this fold
-        final_model_path = f"models/{run_name}_fold{fold+1}_final.pth"
+        final_model_path = f"models/{run_name}_fold{fold + 1}_final.pth"
         save_checkpoint(model, optimizer, epoch, val_acc, final_model_path)
         if use_wandb:
             wandb.save(final_model_path)
 
-    # Calculate average validation accuracy and F1 score across all folds
+    # Calculate average validation accuracy across all folds
     avg_val_acc = np.mean([result["best_val_acc"] for result in fold_results])
-    avg_val_f1 = np.mean([result["best_val_f1"] for result in fold_results])
     print(f"\nAverage validation accuracy across all folds: {avg_val_acc:.2f}%")
-    print(f"Average validation F1 Score across all folds: {avg_val_f1:.4f}")
     
     if use_wandb:
-        wandb.log({
-            "average_val_acc": avg_val_acc,
-            "average_val_f1": avg_val_f1
-        })
+        wandb.log({"average_val_acc": avg_val_acc})
         wandb.finish()
     else:
         writer.close()
     
-    return fold_results, avg_val_acc, avg_val_f1
+    return fold_results, avg_val_acc
 
 def main():
-    """Main function dengan modifikasi argument"""
+    """Main function with argument parsing."""
     parser = argparse.ArgumentParser(description="Train coffee classification models")
     parser.add_argument("--model", type=str, choices=["efficientnet", "resnet50", "mobilenetv3", "densenet121", "vit", "convnext", "regnet"], 
                         default="efficientnet", help="Model architecture to use")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
     parser.add_argument("--lr", type=float, default=0.00001, help="Learning rate")
     parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
-    parser.add_argument("--patience", type=int, default=20, help="Early stopping patience")
+    parser.add_argument("--patience", type=int, default=10, help="Early stopping patience")
     parser.add_argument("--device", type=str, choices=["cuda", "mps", "cpu"], 
                         default=None, help="Device to use (overrides automatic detection)")
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging and use tensorboard")
     parser.add_argument("--all", action="store_true", help="Train all models")
-    
+
     args = parser.parse_args()
 
     all_models = ["efficientnet", "resnet50", "mobilenetv3", "densenet121", "vit", "convnext", "regnet"]
@@ -325,6 +290,24 @@ def main():
     if args.all:
         print("Training all models...")
         results = {}
+        accuracies = {model: [] for model in all_models}
+        f1_scores = {model: [] for model in all_models}
+        precisions = {model: [] for model in all_models}
+        recalls = {model: [] for model in all_models}
+        
+        # Initialize wandb if enabled
+        if not args.no_wandb:
+            wandb.init(
+                project="coffee-classification",
+                name="all_models_anova",
+                config={
+                    "batch_size": args.batch_size,
+                    "learning_rate": args.lr,
+                    "epochs": args.epochs,
+                    "patience": args.patience
+                }
+            )
+        
         for model_name in all_models:
             print(f"\nTraining {model_name} model")
             fold_results, avg_val_acc, avg_val_f1 = train(
@@ -340,12 +323,36 @@ def main():
                 "avg_val_acc": avg_val_acc,
                 "avg_val_f1": avg_val_f1
             }
+            accuracies[model_name] = [result["val_accs"] for result in fold_results]
+            f1_scores[model_name] = [result["val_f1s"] for result in fold_results]
+            precisions[model_name] = [result["val_precisions"] for result in fold_results]
+            recalls[model_name] = [result["val_recalls"] for result in fold_results]
             print(f"{model_name} - Average Validation Accuracy: {avg_val_acc:.2f}%")
             print(f"{model_name} - Average Validation F1 Score: {avg_val_f1:.4f}")
 
         print("\nSummary of Results:")
         for model_name, metrics in results.items():
             print(f"{model_name}: Accuracy = {metrics['avg_val_acc']:.2f}%, F1 Score = {metrics['avg_val_f1']:.4f}")
+
+        f_stat, p_value, anova_result = perform_anova(accuracies)
+        print(f"\nANOVA Results:")
+        print(f"F-statistic: {f_stat:.4f}, p-value: {p_value:.4f}")
+        print(anova_result)
+
+        if not args.no_wandb:
+            wandb.log({
+                "ANOVA/F-statistic": f_stat,
+                "ANOVA/p-value": p_value,
+                "ANOVA/Result": anova_result
+            })
+            for model_name in all_models:
+                wandb.log({
+                    f"{model_name}/avg_val_acc": results[model_name]["avg_val_acc"],
+                    f"{model_name}/avg_val_f1": results[model_name]["avg_val_f1"]
+                })
+
+        if not args.no_wandb:
+            wandb.finish()
     else:
         print(f"Training with {args.model} model")
         fold_results, avg_val_acc, avg_val_f1 = train(
