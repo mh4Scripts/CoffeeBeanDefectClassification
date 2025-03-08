@@ -127,6 +127,7 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
     
     # Store results for each fold
     fold_results = []
+    avg_val_f1_list = []
     
     # Iterate through each fold
     for fold, (train_loader, val_loader) in enumerate(fold_loaders):
@@ -158,6 +159,7 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
         # History for plotting
         train_losses, val_losses = [], []
         train_accs, val_accs = [], []
+        val_f1s = []
 
         start_time = time.time()
         for epoch in range(epochs):
@@ -180,6 +182,7 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
             val_losses.append(val_loss)
             train_accs.append(train_acc)
             val_accs.append(val_acc)
+            val_f1s.append(val_f1) 
 
             # Log metrics to wandb if enabled
             if use_wandb:
@@ -236,6 +239,9 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
         print(f"Fold {fold + 1} complete in {training_time:.2f}s")
         print(f"Best validation accuracy: {best_val_acc:.2f}%")
 
+        avg_val_f1 = np.mean(val_f1s)
+        avg_val_f1_list.append(avg_val_f1)
+
         # Save fold results
         fold_results.append({
             "fold": fold + 1,
@@ -243,7 +249,8 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
             "train_losses": train_losses,
             "val_losses": val_losses,
             "train_accs": train_accs,
-            "val_accs": val_accs
+            "val_accs": val_accs,
+            "val_f1s": val_f1s
         })
 
         # Plot training history for this fold
@@ -262,14 +269,21 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
     # Calculate average validation accuracy across all folds
     avg_val_acc = np.mean([result["best_val_acc"] for result in fold_results])
     print(f"\nAverage validation accuracy across all folds: {avg_val_acc:.2f}%")
+
+    # Calculate average f1 score across all folds
+    avg_val_f1 = np.mean(avg_val_f1_list)
+    print(f"\nAverage validation F1 Score across all folds: {avg_val_f1:.4f}")
     
     if use_wandb:
-        wandb.log({"average_val_acc": avg_val_acc})
+        wandb.log({
+            "average_val_acc": avg_val_acc,
+            "average_val_f1": avg_val_f1
+        })
         wandb.finish()
     else:
         writer.close()
     
-    return fold_results, avg_val_acc
+    return fold_results, avg_val_acc, avg_val_f1
 
 def main():
     """Main function with argument parsing."""
