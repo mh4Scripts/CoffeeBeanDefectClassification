@@ -128,6 +128,8 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
     # Store results for each fold
     fold_results = []
     avg_val_f1_list = []
+    avg_val_recall_list = []
+    avg_val_precision_list = []
     
     # Iterate through each fold
     for fold, (train_loader, val_loader) in enumerate(fold_loaders):
@@ -159,7 +161,8 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
         # History for plotting
         train_losses, val_losses = [], []
         train_accs, val_accs = [], []
-        val_f1s = []
+        val_f1s, val_precisions = [], []
+        val_recalls = []
 
         start_time = time.time()
         for epoch in range(epochs):
@@ -183,6 +186,8 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
             train_accs.append(train_acc)
             val_accs.append(val_acc)
             val_f1s.append(val_f1) 
+            val_precisions.append(val_precision) 
+            val_recalls.append(val_recall) 
 
             # Log metrics to wandb if enabled
             if use_wandb:
@@ -241,6 +246,10 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
 
         avg_val_f1 = np.mean(val_f1s)
         avg_val_f1_list.append(avg_val_f1)
+        avg_val_recall = np.mean(val_recalls)
+        avg_val_recall_list.append(avg_val_recall)
+        avg_val_precision = np.mean(val_precisions)
+        avg_val_precision_list.append(avg_val_precision)
 
         # Save fold results
         fold_results.append({
@@ -251,16 +260,9 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
             "train_accs": train_accs,
             "val_accs": val_accs,
             "val_f1s": val_f1s,
-            "val_precisions": [val_precision for _, _, val_precision, _, _ in val_results],
-            "val_recalls": [val_recall for _, _, _, val_recall, _ in val_results]
+            "val_precisions": val_precisions,
+            "val_recalls": val_recalls
         })
-
-        # Plot training history for this fold
-        fig = plot_training_history(train_losses, val_losses, train_accs, val_accs)
-        if use_wandb:
-            wandb.log({f"Fold {fold + 1}/training_history": wandb.Image("training_history.png")})
-        else:
-            writer.add_figure(f"Fold {fold + 1}/Training History", fig)
 
         # Save final model for this fold
         final_model_path = f"models/{run_name}_fold{fold + 1}_final.pth"
@@ -275,17 +277,29 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
     # Calculate average f1 score across all folds
     avg_val_f1 = np.mean(avg_val_f1_list)
     print(f"\nAverage validation F1 Score across all folds: {avg_val_f1:.4f}")
+
+    # Calculate average recall across all folds
+    avg_val_recall = np.mean(avg_val_recall_list)
+    print(f"\nAverage validation F1 Score across all folds: {avg_val_recall:.4f}")
+
+    # Calculate average f1 score across all folds
+    avg_val_precision = np.mean(avg_val_precision_list)
+    print(f"\nAverage validation F1 Score across all folds: {avg_val_precision:.4f}")
     
     if use_wandb:
         wandb.log({
             "average_val_acc": avg_val_acc,
-            "average_val_f1": avg_val_f1
+            "average_val_f1": avg_val_f1,
+            "average_val_recall": avg_val_recall,
+            "average_val_precision": avg_val_precision
         })
         wandb.finish()
     else:
         writer.close()
     
-    return fold_results, avg_val_acc, avg_val_f1
+    return fold_results, avg_val_acc, \
+        avg_val_f1, average_val_recall, \
+        average_val_precision
 
 def main():
     """Main function with argument parsing."""
@@ -294,7 +308,7 @@ def main():
                         default="efficientnet", help="Model architecture to use")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
     parser.add_argument("--lr", type=float, default=0.00001, help="Learning rate")
-    parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
+    parser.add_argument("--epochs", type=int, default=1, help="Number of epochs")
     parser.add_argument("--patience", type=int, default=5, help="Early stopping patience")
     parser.add_argument("--device", type=str, choices=["cuda", "mps", "cpu"], 
                         default=None, help="Device to use (overrides automatic detection)")
@@ -313,22 +327,21 @@ def main():
         precisions = {model: [] for model in all_models}
         recalls = {model: [] for model in all_models}
 
-        # Initialize wandb if enabled
-        if not args.no_wandb:
-            wandb.init(
-                project="coffee-classification",
-                name="all_models_anova",
-                config={
-                    "batch_size": args.batch_size,
-                    "learning_rate": args.lr,
-                    "epochs": args.epochs,
-                    "patience": args.patience
-                }
-            )
-
         for model_name in all_models:
+                    # Initialize wandb if enabled
+            if not args.no_wandb:
+                wandb.init(
+                    project="coffee-classification",
+                    name=model_name,
+                    config={
+                        "batch_size": args.batch_size,
+                        "learning_rate": args.lr,
+                        "epochs": args.epochs,
+                        "patience": args.patience
+                    }
+                )
             print(f"\nTraining {model_name} model")
-            fold_results, avg_val_acc, avg_val_f1 = train(
+            fold_results, avg_val_acc, avg_val_f1, avg_val_recall, avg_val_precision = train(
                 model_name,
                 args.batch_size,
                 args.lr,
@@ -339,7 +352,9 @@ def main():
             )
             results[model_name] = {
                 "avg_val_acc": avg_val_acc,
-                "avg_val_f1": avg_val_f1
+                "avg_val_f1": avg_val_f1,
+                "avg_val_recall": avg_val_recall,
+                "avg_val_precision": avg_val_precision
             }
             accuracies[model_name] = [result["val_accs"] for result in fold_results]
             f1_scores[model_name] = [result["val_f1s"] for result in fold_results]
@@ -366,14 +381,17 @@ def main():
             for model_name in all_models:
                 wandb.log({
                     f"{model_name}/avg_val_acc": results[model_name]["avg_val_acc"],
-                    f"{model_name}/avg_val_f1": results[model_name]["avg_val_f1"]
+                    f"{model_name}/avg_val_f1": results[model_name]["avg_val_f1"],
+                    f"{model_name}/avg_val_recall": results[model_name]["avg_val_recall"],
+                    f"{model_name}/avg_val_precision": results[model_name]["avg_val_precision"]
                 })
 
         if not args.no_wandb:
             wandb.finish()
     else:
         print(f"Training with {args.model} model")
-        fold_results, avg_val_acc, avg_val_f1 = train(
+        fold_results, avg_val_acc, avg_val_f1, \
+            avg_val_recall, avg_val_precision = train(
             args.model,
             args.batch_size,
             args.lr,
@@ -384,6 +402,8 @@ def main():
         )
         print(f"Average Validation Accuracy: {avg_val_acc:.2f}%")
         print(f"Average Validation F1 Score: {avg_val_f1:.4f}")
+        print(f"Average Validation Recall: {avg_val_recall:.4f}")
+        print(f"Average Validation Precision: {avg_val_precision:.4f}")
 
 if __name__ == "__main__":
     main()

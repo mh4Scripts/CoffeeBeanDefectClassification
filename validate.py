@@ -1,3 +1,4 @@
+import torch
 from sklearn.metrics import precision_score, recall_score
 
 def validate(model, val_loader, criterion, device):
