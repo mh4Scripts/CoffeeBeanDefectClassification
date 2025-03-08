@@ -96,7 +96,7 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
     writer = None
     if use_wandb:
         wandb.init(
-            project="coffee-classification",
+            project="CoffeeBeanDefectClassification",
             name=run_name,
             config={
                 "model": model_name,
@@ -250,7 +250,9 @@ def train(model_name, batch_size=32, lr=0.00001, epochs=100, patience=5, device_
             "val_losses": val_losses,
             "train_accs": train_accs,
             "val_accs": val_accs,
-            "val_f1s": val_f1s
+            "val_f1s": val_f1s,
+            "val_precisions": [val_precision for _, _, val_precision, _, _ in val_results],
+            "val_recalls": [val_recall for _, _, _, val_recall, _ in val_results]
         })
 
         # Plot training history for this fold
@@ -292,7 +294,7 @@ def main():
                         default="efficientnet", help="Model architecture to use")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
     parser.add_argument("--lr", type=float, default=0.00001, help="Learning rate")
-    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
+    parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--patience", type=int, default=5, help="Early stopping patience")
     parser.add_argument("--device", type=str, choices=["cuda", "mps", "cpu"], 
                         default=None, help="Device to use (overrides automatic detection)")
@@ -348,7 +350,7 @@ def main():
 
         print("\nSummary of Results:")
         for model_name, metrics in results.items():
-            print(f"{model_name}: Accuracy = {metrics['avg_val_acc']:.2f}%, F1 Score = {metrics['avg_val_f1']:.4f}")
+            print(f"{model_name}: Accuracy = {metrics['avg_val_acc']:.2f}%, F1 Score = {metrics['avg_val_f1']:.4f}, Precision = {np.mean(precisions[model_name]):.4f}, Recall = {np.mean(recalls[model_name]):.4f}")
 
         f_stat, p_value, anova_result = perform_anova(accuracies)
         print(f"\nANOVA Results:")
